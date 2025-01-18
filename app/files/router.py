@@ -108,6 +108,7 @@ async def files_id_post(id:str, file_content : UploadFile = CarlemanyFile(), aut
     current_file.file.path = prefix + filename
     return {"status": "ok"}
 
+
 @router.delete("/{id}")
 async def files_id_delete(id:str, auth: str = Header(alias="auth")) -> dict[str, str]:
     introspect_response = await introspect(auth=auth)
@@ -129,3 +130,31 @@ async def files_id_delete(id:str, auth: str = Header(alias="auth")) -> dict[str,
 
     return {"status": "ok"}
 
+@router.get("/{id}")
+async def files_id_get(id: str, auth: str = Header(alias="auth")) -> dict:
+    introspect_response = await introspect(auth=auth)
+
+    if id not in files_database:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    current_file = files_database[id]
+
+    if introspect_response.username != current_file.owner.username:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    file_info = {
+        "id": id,
+        "name": current_file.file.name,
+        "amount_of_pages": current_file.file.amount_of_pages,
+        "path": current_file.file.path,
+        "owner": {
+            "username": current_file.owner.username,
+            "mail": current_file.owner.mail
+        }
+    }
+
+    if current_file.file.path and os.path.exists(current_file.file.path):
+        with open(current_file.file.path, "rb") as f:
+            file_info["content"] = f.read().hex()
+
+    return {"status": "ok", "file_info": file_info}
