@@ -8,14 +8,29 @@ services:
     image: carlemany-backend-dev
     depends_on:
       - postgres
+      - redis-database
+      - minio
     env_file:
-     - .env
+      - .env
     volumes:
       - type: bind
         source: .
         target: /carlemany-backend
     ports:
       - "8080:80"
+    networks:
+      - carlemany-net
+
+  redis-database:
+    image: redis:7.2.4
+    hostname: redis-cache
+    container_name: redis-cache
+    restart: on-failure
+    command: redis-server
+    environment:
+      - ALLOW_EMPTYPASSWORD=yes
+    ports:
+      - "6379:6379"
     networks:
       - carlemany-net
 
@@ -26,7 +41,7 @@ services:
       - POSTGRES_USER=${PSQL_DB_USERNAME}
       - POSTGRES_PASSWORD=${PSQL_DB_PASSWORD}
     env_file:
-     - .env
+      - .env
     volumes:
       - type: volume
         source: carlemany-backend-data
@@ -38,6 +53,34 @@ services:
       retries: 5
     ports:
       - "5432:5432"
+    networks:
+      - carlemany-net
+
+  minio-server:
+    image: quay.io/minio/minio:RELEASE.2023-11-01T01-57-10Z
+    command: minio server /data --console-address ":9090"
+    ports:
+      - "9000:9000"
+      - "9090:9090"
+    environment:
+      - MINIO_ROOT_USER=minio
+      - MINIO_ROOT_PASSWORD=minio123
+    restart: always
+    networks:
+      - carlemany-net
+
+  minio:
+    image: minio/mc
+    depends_on:
+      - minio-server
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio minio-server:9000 minio minio123;
+      /usr/bin/mc mb myminio/backend-carlemany-s3-bucket;
+      /usr/bin/mc anonymous set download myminio/backend-carlemany-s3-bucket;
+      /usr/bin/mc policy set public myminio/backend-carlemany-s3-bucket;
+      exit 0;
+      "
     networks:
       - carlemany-net
 
@@ -92,20 +135,18 @@ services:
         read_only: true
     entrypoint: sh -c "black --config .black --check --diff ."
 
-
   format:
     image: carlemany-backend-base:latest
     volumes:
       - type: bind
         source: ./
         target: /carlemany-backend
-        read_only: true
     entrypoint: sh -c "black --config .black . && ruff check --fix"
 
   test: &test
     image: carlemany-backend-dev:latest
     env_file:
-     - .env
+      - .env
     volumes:
       - type: bind
         source: ./
@@ -123,4 +164,4 @@ volumes:
 
 networks:
   carlemany-net:
-  
+    driver: bridge
